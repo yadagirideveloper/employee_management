@@ -11,7 +11,19 @@
 
 <div class="container mt-5">
 
-    <h2 class="mb-4">Employee Dashboard</h2>
+  <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-light rounded shadow-sm">
+    <div>
+        <h5 class="mb-0">
+            Welcome, {{ session.get('name', 'User') }}!
+        </h5>
+        <small class="text-muted">Employee Management Dashboard</small>
+    </div>
+
+<a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">
+    <i class="bi bi-box-arrow-right"></i> Logout
+</a>
+
+</div>
 
     <div class="row">
 

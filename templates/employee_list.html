@@ -104,6 +104,7 @@
                         <th>Designation</th>
                         <th>Salary</th>
                         <th>Status</th>
+                        <th>Photo</th>
                         <th>Action</th>
                     </tr>
 
@@ -123,6 +124,20 @@
                         <td>{{ employee.designation or '-' }}</td>
                         <td>{{ employee.salary or '-' }}</td>
                         <td>{{ employee.status }}</td>
+                        <td>
+                        {% if employee.profile_image %}
+                            <img src="{{ url_for('static', filename='uploads/' + employee.profile_image) }}"
+                                width="45"
+                                height="45"
+                                style="border-radius:50%; object-fit:cover;">
+                        {% else %}
+                            <img src="{{ url_for('static', filename='images/default-user.png') }}"
+                                width="45"
+                                height="45"
+                                style="border-radius:50%; object-fit:cover;">
+                        {% endif %}
+                    </td>
+
                        <td>
                         <div style="display: flex; align-items: center; gap: 6px; white-space: nowrap;">
 

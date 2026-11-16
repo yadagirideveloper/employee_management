@@ -28,7 +28,7 @@
             {% endwith %}
 
             <!-- <form method="POST" action="{{ url_for('add_employee') }}"> -->
-            <form method="POST"
+            <form method="POST" enctype="multipart/form-data"
       action="{{ url_for('update_employee', id=employee.id) if employee else url_for('add_employee') }}">
 
                 <div class="row">
@@ -99,6 +99,28 @@
                             <option value="inactive">Inactive</option>
                         </select>
                     </div>
+
+                </div>
+
+               <div class="mb-3">
+
+                    <label class="form-label">Employee Profile Image</label>
+
+                    {% if employee and employee.profile_image %}
+
+                        <div class="mb-2">
+                            <img src="{{ url_for('static', filename='uploads/' + employee.profile_image) }}"
+                                width="100"
+                                height="100"
+                                style="border-radius:50%; object-fit:cover;">
+                        </div>
+
+                    {% endif %}
+
+                    <input type="file"
+                        name="profile_image"
+                        class="form-control"
+                        accept=".jpg,.jpeg,.png">
 
                 </div>
 

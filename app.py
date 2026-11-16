@@ -2,14 +2,59 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from database.db import get_db_connection
 import math
 from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__) #This creates a Flask application instance.
 
+UPLOAD_FOLDER = os.path.join('static', 'uploads')
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 app.secret_key = "employee_management_secret"
+
+
+def login_required(function):
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+
+        if 'user_id' not in session:
+            flash("Please login to access this page!", "warning")
+            return redirect(url_for('login'))
+
+        return function(*args, **kwargs)
+
+    return wrapper
+
+def admin_required(function):
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+         
+         if 'user_id' not in session:
+            flash("Please login first!", "warning")
+            return redirect(url_for('login'))
+
+         if session.get('role') != 'admin':
+            flash("Access denied! Admin permission required.", "danger")
+            return redirect(url_for('employee_list'))
+
+         return function(*args, **kwargs)
+    return wrapper
+
+
+def allowed_file(filename):
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+    return (
+        '.' in filename
+        and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    )
+
 
 @app.route('/')
 def home():
-    return "Welcome to Employee Management System"
+    return redirect(url_for('login'))
 
 @app.route('/dashboard')
 def dashboard():
@@ -86,9 +131,9 @@ def register():
             cursor.execute(query, values)
             connection.commit()
 
-            flash("Registration completed successfully!", "success")
+            flash("Registration completed successfully, Please login!", "success")
 
-            return redirect(url_for('register'))
+            return redirect(url_for('login'))
         
         except Exception as e:
 
@@ -133,6 +178,7 @@ def login():
             user = cursor.fetchone()
             if user and check_password_hash(user['password'], password):
                 session['user_id'] = user['id']
+                session['name'] = user['name']
                 session['email'] = user['email']
                 session['role'] = user['role']
 
@@ -160,8 +206,12 @@ def login():
 
     return render_template('login.html')
 
-
-    
+#logout
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash("You have logged out successfully")
+    return redirect(url_for('login'))
 
 
     
@@ -180,6 +230,7 @@ def login():
 # Step 1 - Employee Registration
 
 @app.route('/add-employee', methods = ['GET', 'POST'])
+@admin_required
 def add_employee():
     if request.method == "POST":
         employee_code = request.form.get('employee_code', '').strip()
@@ -192,6 +243,8 @@ def add_employee():
         salary = request.form.get('salary') or None
         joining_date = request.form.get('joining_date') or None
         status = request.form.get('status', 'active')
+        profile_image = request.files.get('profile_image')
+        image_filename = None
 
         if not employee_code or not first_name or not email:
             flash("Employee Code, First Name and Email are required.", "danger")
@@ -201,8 +254,29 @@ def add_employee():
             flash("Invalid employee status", "danger")
             return redirect(url_for('add_employee'))
 
+        if profile_image and profile_image.filename:
+
+            if allowed_file(profile_image.filename):
+
+                filename = secure_filename(profile_image.filename)
+                image_filename = filename
+
+                upload_path = os.path.join(
+                    app.config['UPLOAD_FOLDER'],
+                    image_filename
+                )
+
+                profile_image.save(upload_path)
+
+            else:
+                flash("Only JPG, JPEG and PNG images are allowed!", "danger")
+                return redirect(url_for('add_employee'))
+
+        
+
         connection = None
         cursor = None
+
 
         try:
             connection = get_db_connection()
@@ -219,9 +293,10 @@ def add_employee():
             designation,
             salary,
             joining_date,
-            status
+            status,
+            profile_image
             ) values(
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             """
             values = (
@@ -234,7 +309,8 @@ def add_employee():
                 designation or None,
                 salary,
                 joining_date,
-                status
+                status,
+                image_filename
 
             )
 
@@ -245,7 +321,7 @@ def add_employee():
 
         except Exception as e:               #This block handles errors that occur inside the try block
             if connection:
-                connection.rollback         #Cancel uncommitted database changes 
+                connection.rollback()         #Cancel uncommitted database changes 
 
             flash(f"Error: {str(e)}", "danger")
 
@@ -401,6 +477,7 @@ def employee_details(id):
 
 
 @app.route('/employee-edit/<int:id>')
+@admin_required
 def edit_employee(id):
     connection = None
     cursor = None
@@ -421,6 +498,7 @@ def edit_employee(id):
 
 
 @app.route('/employee-update/<int:id>', methods=['POST'])
+@admin_required
 def update_employee(id):
        if request.method == "POST":
             employee_code = request.form.get('employee_code', '').strip()
@@ -433,12 +511,40 @@ def update_employee(id):
             salary = request.form.get('salary') or None
             joining_date = request.form.get('joining_date') or None
             status = request.form.get('status', 'active')
+            profile_image = request.files.get('profile_image')
 
             connection = None
             cursor = None
             try:
                 connection = get_db_connection()
-                cursor = connection.cursor()
+                cursor = connection.cursor(dictionary=True)
+
+                cursor.execute("SELECT * FROM employees WHERE id = %s",
+                (id,))
+
+                employee = cursor.fetchone()
+                if not employee:
+                    flash("Employee not found!", "danger")
+                    return redirect(url_for('employee_list'))
+
+                image_filename = employee['profile_image']
+
+                if profile_image and profile_image.filename:
+                    if allowed_file(profile_image.filename):
+                        filename = secure_filename(profile_image.filename)
+
+                        image_filename = filename
+
+                        upload_path = os.path.join(
+                            app.config['UPLOAD_FOLDER'],
+                            image_filename
+                        )
+
+                        profile_image.save(upload_path)
+                    else:
+                            flash("Only JPG, JPEG and PNG images are allowed!", "danger")
+                            return redirect(url_for('edit_employee', id=id))
+                
                 query = """
                 UPDATE employees SET
                 employee_code  = %s,
@@ -450,7 +556,8 @@ def update_employee(id):
                 department = %s,
                 designation = %s,
                 joining_date = %s,
-                status = %s
+                status = %s,
+                profile_image = %s
                 WHERE id = %s
                 """
                 values = (
@@ -464,6 +571,7 @@ def update_employee(id):
                     designation,
                     joining_date,
                     status,
+                    image_filename,
                     id
 
                 )
@@ -478,6 +586,7 @@ def update_employee(id):
                 return f"Database Errror: {str(e)}", 500
                 
 @app.route('/employee-delete/<int:id>', methods=['POST'])
+@admin_required
 def delete_employee(id):
 
     connection = None
@@ -517,6 +626,86 @@ def delete_employee(id):
 
         if connection and connection.is_connected():
             connection.close()
+
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+
+    if request.method == "POST":
+
+        current_password = request.form.get('current_password', '')
+        new_password = request.form.get('new_password', '')
+        confirm_new_password = request.form.get('confirm_new_password', '')
+
+        connection = None
+        cursor = None
+
+        try:
+            connection = get_db_connection()
+            cursor = connection.cursor(dictionary=True)
+
+            # 1. Get logged-in user details
+            query = "SELECT * FROM users WHERE id = %s"
+            values = (session['user_id'],)
+
+            cursor.execute(query, values)
+            user = cursor.fetchone()
+
+            if not user:
+                flash("User not found!", "danger")
+                return redirect(url_for('login'))
+
+            # 2. Verify current password
+            if not check_password_hash(user['password'], current_password):
+                flash("Current password is incorrect!", "danger")
+                return redirect(url_for('change_password'))
+
+            # 3. Validate new password
+            if len(new_password) < 8:
+                flash("New password must contain at least 8 characters!", "danger")
+                return redirect(url_for('change_password'))
+
+            # 4. Check password confirmation
+            if new_password != confirm_new_password:
+                flash("New password and confirmation do not match!", "danger")
+                return redirect(url_for('change_password'))
+
+            # 5. Hash new password
+            hashed_password = generate_password_hash(new_password)
+
+            # 6. Update password
+            query = """
+                UPDATE users
+                SET password = %s
+                WHERE id = %s
+            """
+
+            values = (hashed_password, session['user_id'])
+
+            cursor.execute(query, values)
+            connection.commit()
+
+            flash("Password updated successfully!", "success")
+            return redirect(url_for('dashboard'))
+
+        except Exception as e:
+
+            if connection:
+                connection.rollback()
+
+            print("Database Error:", str(e))
+            flash("Unable to update password. Please try again.", "danger")
+
+        finally:
+
+            if cursor:
+                cursor.close()
+
+            if connection and connection.is_connected():
+                connection.close()
+
+    return render_template('change_password.html')
+
             
 @app.route('/about')
 def about():
@@ -534,3 +723,6 @@ def contact():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+
