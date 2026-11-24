@@ -74,6 +74,14 @@
         View Employees
     </a>
 
+    {% if session.get('role') == 'admin' %}
+
+    <a href="{{ url_for('user_list') }}" class="btn btn-primary mt-3">
+        User Management
+    </a>
+
+        {% endif %}
+
 </div>
 
 </body>
